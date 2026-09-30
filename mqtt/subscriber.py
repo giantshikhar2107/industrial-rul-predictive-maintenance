@@ -10,6 +10,8 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 import simulator.config as config
 
+from database.database import initialize_database, insert_machine, insert_sensor_reading
+
 
 CSV_FILE = os.path.join(
     os.path.dirname(__file__),
@@ -56,7 +58,7 @@ def create_csv():
 
 def on_connect(client, userdata, flags, reason_code, properties):
 
-    print("Connected to MQTT broker")
+    print("Connected to HiveMQ Cloud")
 
     client.subscribe(config.MQTT_TOPIC)
 
@@ -70,6 +72,8 @@ def on_message(client, userdata, message):
         data = json.loads(
             message.payload.decode()
         )
+
+        insert_sensor_reading(data)
 
         with open(
             CSV_FILE,
@@ -99,9 +103,26 @@ def on_message(client, userdata, message):
 
 create_csv()
 
+initialize_database()
+
+insert_machine(
+    "M001",
+    "Motor-01",
+    "Industrial Motor",
+    "Production Line 1"
+)
+
+
 client = mqtt.Client(
     mqtt.CallbackAPIVersion.VERSION2
 )
+
+client.username_pw_set(
+    config.MQTT_USERNAME,
+    config.MQTT_PASSWORD
+)
+
+client.tls_set()
 
 client.on_connect = on_connect
 client.on_message = on_message
@@ -113,6 +134,8 @@ client.connect(
 )
 
 print("MQTT Data Logger Started")
+print("MQTT Broker:", config.MQTT_BROKER)
+print("MQTT Topic:", config.MQTT_TOPIC)
 print("CSV File:", CSV_FILE)
 
 client.loop_forever()

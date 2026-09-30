@@ -1,19 +1,107 @@
 import os
-import time
-
+import sqlite3
 import pandas as pd
 import streamlit as st
-import plotly.express as px
+from streamlit_autorefresh import st_autorefresh
 
 
-CSV_FILE = os.path.abspath(
-    os.path.join(
-        os.path.dirname(__file__),
-        "..",
-        "data",
-        "machine_data.csv"
-    )
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+DATABASE_FILE = os.path.join(
+    BASE_DIR,
+    "database",
+    "machine_data.db"
 )
+
+
+def get_connection():
+    return sqlite3.connect(DATABASE_FILE)
+
+
+def get_machine_info():
+
+    connection = get_connection()
+
+    query = """
+    SELECT machine_id, machine_name, machine_type, location
+    FROM machines
+    LIMIT 1
+    """
+
+    data = pd.read_sql_query(query, connection)
+
+    connection.close()
+
+    return data
+
+
+def get_latest_reading():
+
+    connection = get_connection()
+
+    query = """
+    SELECT
+        machine_id,
+        timestamp,
+        cycle,
+        temperature,
+        vibration,
+        current,
+        pressure,
+        rpm,
+        rul
+    FROM sensor_readings
+    ORDER BY id DESC
+    LIMIT 1
+    """
+
+    data = pd.read_sql_query(query, connection)
+
+    connection.close()
+
+    return data
+
+
+def get_recent_readings():
+
+    connection = get_connection()
+
+    query = """
+    SELECT
+        timestamp,
+        cycle,
+        temperature,
+        vibration,
+        current,
+        pressure,
+        rpm,
+        rul
+    FROM sensor_readings
+    ORDER BY id DESC
+    LIMIT 100
+    """
+
+    data = pd.read_sql_query(query, connection)
+
+    connection.close()
+
+    return data.sort_values("cycle")
+
+
+def get_reading_count():
+
+    connection = get_connection()
+
+    query = """
+    SELECT COUNT(*) AS total
+    FROM sensor_readings
+    """
+
+    data = pd.read_sql_query(query, connection)
+
+    connection.close()
+
+    return int(data.iloc[0]["total"])
 
 
 st.set_page_config(
@@ -21,61 +109,79 @@ st.set_page_config(
     page_icon="⚙️",
     layout="wide"
 )
-time.sleep(1)
+st_autorefresh(
+    interval=2000,
+    key="dashboard_refresh"
+)
 
 
 st.title("Industrial Machine Monitoring Dashboard")
 
 st.write(
-    "Real-time monitoring of machine condition using MQTT sensor data."
+    "Real-time monitoring of machine condition using "
+    "HiveMQ Cloud, MQTT and SQLite."
 )
 
 
-if not os.path.exists(CSV_FILE):
+if not os.path.exists(DATABASE_FILE):
 
-    st.error("Machine data file not found.")
+    st.error(
+        "SQLite database not found. "
+        "Start the MQTT subscriber first."
+    )
 
     st.stop()
 
 
-data = pd.read_csv(CSV_FILE)
+machine_info = get_machine_info()
+latest = get_latest_reading()
+recent = get_recent_readings()
+total_readings = get_reading_count()
 
 
-if data.empty:
+if machine_info.empty or latest.empty:
 
-    st.warning("No machine data available.")
+    st.warning(
+        "No machine data is available in the database yet."
+    )
 
     st.stop()
 
 
-data["timestamp"] = pd.to_datetime(
-    data["timestamp"]
-)
-
-
-latest = data.iloc[-1]
+machine = machine_info.iloc[0]
+reading = latest.iloc[0]
 
 
 st.subheader("Machine Information")
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 
 with col1:
+
     st.metric(
         "Machine ID",
-        latest["machine_id"]
+        machine["machine_id"]
     )
 
 with col2:
+
     st.metric(
-        "Machine Type",
-        latest["machine_type"]
+        "Machine",
+        machine["machine_name"]
     )
 
 with col3:
+
     st.metric(
-        "Current Cycle",
-        int(latest["cycle"])
+        "Machine Type",
+        machine["machine_type"]
+    )
+
+with col4:
+
+    st.metric(
+        "Location",
+        machine["location"]
     )
 
 
@@ -84,117 +190,120 @@ st.subheader("Current Machine Condition")
 col1, col2, col3, col4, col5 = st.columns(5)
 
 with col1:
+
     st.metric(
         "Temperature",
-        f"{latest['temperature']:.2f} °C"
+        f"{reading['temperature']:.2f} °C"
     )
 
 with col2:
+
     st.metric(
         "Vibration",
-        f"{latest['vibration']:.2f}"
+        f"{reading['vibration']:.2f}"
     )
 
 with col3:
+
     st.metric(
         "Current",
-        f"{latest['current']:.2f} A"
+        f"{reading['current']:.2f} A"
     )
 
 with col4:
+
     st.metric(
         "Pressure",
-        f"{latest['pressure']:.2f} bar"
+        f"{reading['pressure']:.2f} bar"
     )
 
 with col5:
+
     st.metric(
         "RPM",
-        f"{latest['rpm']:.0f}"
+        f"{reading['rpm']:.2f}"
     )
 
 
-st.subheader("Remaining Useful Life")
+st.subheader("Machine Status")
 
-st.metric(
-    "RUL",
-    f"{int(latest['rul'])} cycles"
-)
+col1, col2, col3 = st.columns(3)
+
+with col1:
+
+    st.metric(
+        "Current Cycle",
+        int(reading["cycle"])
+    )
+
+with col2:
+
+    st.metric(
+        "Remaining Useful Life",
+        f"{reading['rul']:.0f} cycles"
+    )
+
+with col3:
+
+    st.metric(
+        "Stored Readings",
+        total_readings
+    )
 
 
 st.subheader("Machine Sensor Trends")
 
+chart_data = recent.set_index("cycle")
 
-temperature_fig = px.line(
-    data,
-    x="timestamp",
-    y="temperature",
-    title="Temperature vs Time"
-)
-
-st.plotly_chart(
-    temperature_fig,
-    use_container_width=True
-)
-
-
-vibration_fig = px.line(
-    data,
-    x="timestamp",
-    y="vibration",
-    title="Vibration vs Time"
-)
-
-st.plotly_chart(
-    vibration_fig,
-    use_container_width=True
+st.line_chart(
+    chart_data[
+        [
+            "temperature",
+            "vibration",
+            "current",
+            "pressure"
+        ]
+    ]
 )
 
 
-current_fig = px.line(
-    data,
-    x="timestamp",
-    y="current",
-    title="Current vs Time"
-)
+st.subheader("RPM Trend")
 
-st.plotly_chart(
-    current_fig,
-    use_container_width=True
-)
-
-
-rpm_fig = px.line(
-    data,
-    x="timestamp",
-    y="rpm",
-    title="RPM vs Time"
-)
-
-st.plotly_chart(
-    rpm_fig,
-    use_container_width=True
+st.line_chart(
+    chart_data[
+        [
+            "rpm"
+        ]
+    ]
 )
 
 
-rul_fig = px.line(
-    data,
-    x="timestamp",
-    y="rul",
-    title="Remaining Useful Life vs Time"
+st.subheader("RUL Trend")
+
+st.line_chart(
+    chart_data[
+        [
+            "rul"
+        ]
+    ]
 )
 
-st.plotly_chart(
-    rul_fig,
-    use_container_width=True
-)
 
-
-st.subheader("Latest Sensor Data")
+st.subheader("Latest Database Reading")
 
 st.dataframe(
-    data.tail(20),
+    latest,
     use_container_width=True
 )
-time.sleep(2)
-st.rerun()
+
+
+st.caption(
+    f"Data source: SQLite database | "
+    f"Last cycle: {int(reading['cycle'])} | "
+    f"Last update: {reading['timestamp']}"
+)
+
+
+if st.button("Refresh Dashboard"):
+
+    st.rerun()

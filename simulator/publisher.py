@@ -8,7 +8,16 @@ import config
 
 machine = IndustrialMachine()
 
-client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+client = mqtt.Client(
+    mqtt.CallbackAPIVersion.VERSION2
+)
+
+client.username_pw_set(
+    config.MQTT_USERNAME,
+    config.MQTT_PASSWORD
+)
+
+client.tls_set()
 
 client.connect(
     config.MQTT_BROKER,
