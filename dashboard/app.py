@@ -1,155 +1,148 @@
 import os
-import sqlite3
 import pandas as pd
 import streamlit as st
+from supabase import create_client
 from streamlit_autorefresh import st_autorefresh
-
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-DATABASE_FILE = os.path.join(
-    BASE_DIR,
-    "database",
-    "machine_data.db"
-)
-
-
-def get_connection():
-    return sqlite3.connect(DATABASE_FILE)
-
-
-def get_machine_info():
-
-    connection = get_connection()
-
-    query = """
-    SELECT machine_id, machine_name, machine_type, location
-    FROM machines
-    LIMIT 1
-    """
-
-    data = pd.read_sql_query(query, connection)
-
-    connection.close()
-
-    return data
-
-
-def get_latest_reading():
-
-    connection = get_connection()
-
-    query = """
-    SELECT
-        machine_id,
-        timestamp,
-        cycle,
-        temperature,
-        vibration,
-        current,
-        pressure,
-        rpm,
-        rul
-    FROM sensor_readings
-    ORDER BY id DESC
-    LIMIT 1
-    """
-
-    data = pd.read_sql_query(query, connection)
-
-    connection.close()
-
-    return data
-
-
-def get_recent_readings():
-
-    connection = get_connection()
-
-    query = """
-    SELECT
-        timestamp,
-        cycle,
-        temperature,
-        vibration,
-        current,
-        pressure,
-        rpm,
-        rul
-    FROM sensor_readings
-    ORDER BY id DESC
-    LIMIT 100
-    """
-
-    data = pd.read_sql_query(query, connection)
-
-    connection.close()
-
-    return data.sort_values("cycle")
-
-
-def get_reading_count():
-
-    connection = get_connection()
-
-    query = """
-    SELECT COUNT(*) AS total
-    FROM sensor_readings
-    """
-
-    data = pd.read_sql_query(query, connection)
-
-    connection.close()
-
-    return int(data.iloc[0]["total"])
-
 
 st.set_page_config(
     page_title="Industrial Machine Monitoring",
     page_icon="⚙️",
     layout="wide"
 )
+
 st_autorefresh(
     interval=2000,
     key="dashboard_refresh"
 )
 
 
-st.title("Industrial Machine Monitoring Dashboard")
+def get_supabase_client():
+    try:
+        supabase_url = st.secrets["SUPABASE_URL"]
+        supabase_key = st.secrets["SUPABASE_PUBLISHABLE_KEY"]
+
+    except Exception:
+        from dotenv import load_dotenv
+
+        load_dotenv()
+
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_PUBLISHABLE_KEY")
+
+    if not supabase_url or not supabase_key:
+        st.error("Supabase credentials are not configured.")
+        st.stop()
+
+    return create_client(
+        supabase_url,
+        supabase_key
+    )
+
+supabase = get_supabase_client()
+
+
+def get_machine_info():
+    response = (
+        supabase
+        .table("machines")
+        .select("machine_id,machine_name,machine_type,location")
+        .limit(1)
+        .execute()
+    )
+
+    if not response.data:
+        return pd.DataFrame()
+
+    return pd.DataFrame(response.data)
+
+
+def get_latest_reading():
+    response = (
+        supabase
+        .table("sensor_readings")
+        .select(
+            "id,machine_id,timestamp,cycle,"
+            "temperature,vibration,current,pressure,rpm,"
+            "degradation,rul"
+        )
+        .order("id", desc=True)
+        .limit(1)
+        .execute()
+    )
+
+    if not response.data:
+        return pd.DataFrame()
+
+    return pd.DataFrame(response.data)
+
+
+def get_recent_readings():
+    response = (
+        supabase
+        .table("sensor_readings")
+        .select(
+            "id,machine_id,timestamp,cycle,"
+            "temperature,vibration,current,pressure,rpm,"
+            "degradation,rul"
+        )
+        .order("id", desc=True)
+        .limit(100)
+        .execute()
+    )
+
+    if not response.data:
+        return pd.DataFrame()
+
+    data = pd.DataFrame(response.data)
+
+    data = data.sort_values("id")
+
+    return data
+
+
+def get_reading_count():
+    response = (
+        supabase
+        .table("sensor_readings")
+        .select("id", count="exact")
+        .execute()
+    )
+
+    return response.count if response.count is not None else 0
+
+
+st.title("⚙️ Industrial Machine Monitoring")
 
 st.write(
-    "Real-time monitoring of machine condition using "
-    "HiveMQ Cloud, MQTT and SQLite."
+    "Real-time monitoring of industrial machine sensor data "
+    "using MQTT, HiveMQ Cloud, Supabase and Streamlit."
 )
 
 
-if not os.path.exists(DATABASE_FILE):
+try:
+    machine_info = get_machine_info()
+    latest_reading = get_latest_reading()
+    recent_readings = get_recent_readings()
+    reading_count = get_reading_count()
 
-    st.error(
-        "SQLite database not found. "
-        "Start the MQTT subscriber first."
-    )
-
+except Exception as e:
+    st.error("Unable to connect to Supabase.")
+    st.code(str(e))
     st.stop()
 
 
-machine_info = get_machine_info()
-latest = get_latest_reading()
-recent = get_recent_readings()
-total_readings = get_reading_count()
+if machine_info.empty:
+    st.warning("No machine information found in Supabase.")
+    st.stop()
 
 
-if machine_info.empty or latest.empty:
-
-    st.warning(
-        "No machine data is available in the database yet."
-    )
-
+if latest_reading.empty:
+    st.warning("No sensor readings found in Supabase.")
     st.stop()
 
 
 machine = machine_info.iloc[0]
-reading = latest.iloc[0]
+latest = latest_reading.iloc[0]
 
 
 st.subheader("Machine Information")
@@ -157,32 +150,31 @@ st.subheader("Machine Information")
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-
     st.metric(
         "Machine ID",
         machine["machine_id"]
     )
 
 with col2:
-
     st.metric(
-        "Machine",
+        "Machine Name",
         machine["machine_name"]
     )
 
 with col3:
-
     st.metric(
         "Machine Type",
         machine["machine_type"]
     )
 
 with col4:
-
     st.metric(
         "Location",
         machine["location"]
     )
+
+
+st.divider()
 
 
 st.subheader("Current Machine Condition")
@@ -190,39 +182,37 @@ st.subheader("Current Machine Condition")
 col1, col2, col3, col4, col5 = st.columns(5)
 
 with col1:
-
     st.metric(
         "Temperature",
-        f"{reading['temperature']:.2f} °C"
+        f'{latest["temperature"]:.2f} °C'
     )
 
 with col2:
-
     st.metric(
         "Vibration",
-        f"{reading['vibration']:.2f}"
+        f'{latest["vibration"]:.2f}'
     )
 
 with col3:
-
     st.metric(
         "Current",
-        f"{reading['current']:.2f} A"
+        f'{latest["current"]:.2f} A'
     )
 
 with col4:
-
     st.metric(
         "Pressure",
-        f"{reading['pressure']:.2f} bar"
+        f'{latest["pressure"]:.2f}'
     )
 
 with col5:
-
     st.metric(
         "RPM",
-        f"{reading['rpm']:.2f}"
+        f'{latest["rpm"]:.2f}'
     )
+
+
+st.divider()
 
 
 st.subheader("Machine Status")
@@ -230,80 +220,107 @@ st.subheader("Machine Status")
 col1, col2, col3 = st.columns(3)
 
 with col1:
-
     st.metric(
         "Current Cycle",
-        int(reading["cycle"])
+        int(latest["cycle"])
     )
 
 with col2:
-
     st.metric(
         "Remaining Useful Life",
-        f"{reading['rul']:.0f} cycles"
+        f'{latest["rul"]:.0f} cycles'
     )
 
 with col3:
-
     st.metric(
         "Stored Readings",
-        total_readings
+        reading_count
     )
 
 
-st.subheader("Machine Sensor Trends")
+st.divider()
 
-chart_data = recent.set_index("cycle")
 
-st.line_chart(
-    chart_data[
+if not recent_readings.empty:
+
+    st.subheader("Sensor Trends")
+
+    recent_readings["timestamp"] = pd.to_datetime(
+        recent_readings["timestamp"]
+    )
+
+    chart_data = recent_readings.set_index("timestamp")
+
+    st.line_chart(
+        chart_data[
+            [
+                "temperature",
+                "vibration",
+                "current",
+                "pressure"
+            ]
+        ]
+    )
+
+
+    st.subheader("RPM Trend")
+
+    st.line_chart(
+        chart_data[
+            ["rpm"]
+        ]
+    )
+
+
+    st.subheader("Remaining Useful Life Trend")
+
+    st.line_chart(
+        chart_data[
+            ["rul"]
+        ]
+    )
+
+
+st.divider()
+
+
+st.subheader("Latest Sensor Readings")
+
+if not recent_readings.empty:
+
+    display_data = recent_readings.sort_values(
+        "id",
+        ascending=False
+    ).head(10)
+
+    display_data = display_data[
         [
+            "timestamp",
+            "machine_id",
+            "cycle",
             "temperature",
             "vibration",
             "current",
-            "pressure"
-        ]
-    ]
-)
-
-
-st.subheader("RPM Trend")
-
-st.line_chart(
-    chart_data[
-        [
-            "rpm"
-        ]
-    ]
-)
-
-
-st.subheader("RUL Trend")
-
-st.line_chart(
-    chart_data[
-        [
+            "pressure",
+            "rpm",
             "rul"
         ]
     ]
-)
 
-
-st.subheader("Latest Database Reading")
-
-st.dataframe(
-    latest,
-    use_container_width=True
-)
+    st.dataframe(
+        display_data,
+        use_container_width=True
+    )
 
 
 st.caption(
-    f"Data source: SQLite database | "
-    f"Last cycle: {int(reading['cycle'])} | "
-    f"Last update: {reading['timestamp']}"
+    f"Last reading timestamp: {latest['timestamp']}"
 )
 
+st.caption(
+    "Data source: HiveMQ Cloud → MQTT → Supabase → Streamlit"
+)
 
-if st.button("Refresh Dashboard"):
-
-    st.rerun()
+st.button(
+    "Refresh Dashboard"
+)
