@@ -1,13 +1,32 @@
+# Python environments
+
 .venv/
 venv/
 
-__pycache__/
+# Python cache
+
+**pycache**/
 *.pyc
 
+# VS Code settings
+
 .vscode/
+
+# Secrets and logs
 
 .env
 *.log
 
+# Generated datasets and training arrays
+
 data/*.csv
+data/*.npy
+data/*.pkl
+
+# Local databases
+
 database/*.db
+ml/*.npy
+
+# Ignore NumPy training history
+ml/*.npy

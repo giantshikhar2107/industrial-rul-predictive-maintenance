@@ -1,6 +1,6 @@
 import random
 from datetime import datetime
-import config
+from . import config
 
 
 class IndustrialMachine:
@@ -11,7 +11,16 @@ class IndustrialMachine:
         self.cycle = 0
 
     def calculate_degradation(self):
-        return self.cycle / config.MAX_CYCLES
+
+        progress = self.cycle / config.MAX_CYCLES
+
+        degradation = (
+            0.15 * progress
+            + 0.45 * (progress ** 2)
+            + 0.40 * (progress ** 4)
+        )
+
+        return max(0, min(1, degradation))
 
     def generate_sensor_data(self):
 
@@ -20,34 +29,37 @@ class IndustrialMachine:
         temperature = (
             config.BASE_TEMPERATURE
             + 35 * degradation
-            + random.gauss(0, 0.5)
+            + random.gauss(0, 0.8)
         )
 
         vibration = (
             config.BASE_VIBRATION
             + 4.0 * degradation
-            + random.gauss(0, 0.08)
+            + random.gauss(0, 0.12)
         )
 
         current = (
             config.BASE_CURRENT
             + 3.0 * degradation
-            + random.gauss(0, 0.1)
+            + random.gauss(0, 0.15)
         )
 
         pressure = (
             config.BASE_PRESSURE
             - 0.8 * degradation
-            + random.gauss(0, 0.05)
+            + random.gauss(0, 0.08)
         )
 
         rpm = (
             config.BASE_RPM
             - 100 * degradation
-            + random.gauss(0, 2)
+            + random.gauss(0, 3)
         )
 
-        rul = config.MAX_CYCLES - self.cycle
+        rul = max(
+            0,
+            config.MAX_CYCLES - self.cycle
+        )
 
         return {
             "timestamp": datetime.now().isoformat(),

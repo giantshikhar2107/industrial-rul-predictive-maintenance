@@ -1,13 +1,36 @@
 import sqlite3
+import os
 
-DATABASE = "database/machine_data.db"
+
+PROJECT_ROOT = os.path.dirname(
+    os.path.dirname(
+        os.path.abspath(__file__)
+    )
+)
+
+
+DATABASE = os.path.join(
+    PROJECT_ROOT,
+    "database",
+    "machine_data.db"
+)
 
 
 def get_connection():
-    return sqlite3.connect(DATABASE)
+
+    connection = sqlite3.connect(
+        DATABASE
+    )
+
+    connection.execute(
+        "PRAGMA foreign_keys = ON"
+    )
+
+    return connection
 
 
 def initialize_database():
+
     connection = get_connection()
     cursor = connection.cursor()
 
@@ -32,15 +55,39 @@ def initialize_database():
         pressure REAL,
         rpm REAL,
         rul REAL,
-        FOREIGN KEY (machine_id) REFERENCES machines(machine_id)
+        predicted_rul REAL,
+        FOREIGN KEY (machine_id)
+        REFERENCES machines(machine_id)
     )
     """)
+
+    cursor.execute("""
+    PRAGMA table_info(sensor_readings)
+    """)
+
+    columns = [
+        row[1]
+        for row in cursor.fetchall()
+    ]
+
+    if "predicted_rul" not in columns:
+
+        cursor.execute("""
+        ALTER TABLE sensor_readings
+        ADD COLUMN predicted_rul REAL
+        """)
 
     connection.commit()
     connection.close()
 
 
-def insert_machine(machine_id, machine_name, machine_type, location):
+def insert_machine(
+    machine_id,
+    machine_name,
+    machine_type,
+    location
+):
+
     connection = get_connection()
     cursor = connection.cursor()
 
@@ -48,21 +95,28 @@ def insert_machine(machine_id, machine_name, machine_type, location):
     INSERT OR IGNORE INTO machines
     (machine_id, machine_name, machine_type, location)
     VALUES (?, ?, ?, ?)
-    """, (machine_id, machine_name, machine_type, location))
+    """, (
+        machine_id,
+        machine_name,
+        machine_type,
+        location
+    ))
 
     connection.commit()
     connection.close()
 
 
 def insert_sensor_reading(data):
+
     connection = get_connection()
     cursor = connection.cursor()
 
     cursor.execute("""
     INSERT INTO sensor_readings
     (machine_id, timestamp, cycle, temperature,
-     vibration, current, pressure, rpm, rul)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     vibration, current, pressure, rpm, rul,
+     predicted_rul)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         data["machine_id"],
         data["timestamp"],
@@ -72,7 +126,8 @@ def insert_sensor_reading(data):
         data["current"],
         data["pressure"],
         data["rpm"],
-        data["rul"]
+        data["rul"],
+        data.get("predicted_rul")
     ))
 
     connection.commit()
