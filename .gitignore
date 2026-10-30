@@ -1,32 +1,41 @@
 # Python environments
-
 .venv/
 venv/
 
 # Python cache
+__pycache__/
+**/__pycache__/
+*.py[cod]
 
-**pycache**/
-*.pyc
-
-# VS Code settings
-
+# VS Code
 .vscode/
 
 # Secrets and logs
-
 .env
 *.log
 
-# Generated datasets and training arrays
-
-data/*.csv
-data/*.npy
-data/*.pkl
-
-# Local databases
+# Generated datasets, live readings and databases
+data/*
+!data/NASA_CMAPSS/
+data/NASA_CMAPSS/*
+!data/NASA_CMAPSS/processed/
+data/NASA_CMAPSS/processed/*
+!data/NASA_CMAPSS/processed/fd001_scaler.joblib
 
 database/*.db
-ml/*.npy
 
-# Ignore NumPy training history
-ml/*.npy
+# Rejected experimental model
+ml/nasa_fd001_lstm_uncapped.keras
+
+# Duplicate experimental folder
+ml/ml/
+
+# Generated training arrays and histories
+*.npy
+*.npz
+
+# Temporary generated files
+dashboard/app_supabase_backup.py
+dashboard/simulator_app.py
+dashboard/sqlite_dashboard.py
+ml/nasa_fd001_uncapped_test_predictions.npy
